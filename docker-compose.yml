@@ -1,0 +1,72 @@
+version: '3.4'
+
+services:
+  webapi:
+    image: ${DOCKER_REGISTRY-}webapi
+    container_name: WebApi
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=https://+:443;http://+:80
+      - KEYCLOAK_BASE_URL=http://keycloak:8080
+      - KEYCLOAK_CLIENT_ID=WebApp
+      - KEYCLOAK_USERNAME=admin
+      - KEYCLOAK_PASSWORD=KeyCloak@123
+    ports:
+      - 5000:80
+      - 5001:443
+    build:
+      context: .
+      dockerfile: WebApi/Dockerfile
+    volumes:
+      - ${APPDATA}/Microsoft/UserSecrets:/root/.microsoft/usersecrets:ro
+      - ${APPDATA}/ASP.NET/Https:/root/.aspnet/https:ro
+    networks:
+      - keycloak-network
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server
+    container_name: SQLServer
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=SqlServer@123
+      - MSSQL_PID=Developer
+    ports:
+      - 1433:1433
+    volumes:
+      - mssql:/var/opt/mssql
+    networks:
+      - keycloak-network
+
+  mssqlscripts:
+    image: mcr.microsoft.com/mssql-tools
+    depends_on:
+      - mssql
+    command: /bin/bash -c 'until /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P "SqlServer@123" -Q "create database Keycloak"; do sleep 5; done'
+    networks:
+      - keycloak-network
+
+  keycloak:
+    image: jboss/keycloak
+    depends_on:
+      - mssql
+      - mssqlscripts
+    ports:
+      - 8080:8080
+    environment:
+      - KEYCLOAK_USER=admin
+      - KEYCLOAK_PASSWORD=KeyCloak@123
+      - DB_VENDOR=mssql
+      - DB_USER=sa
+      - DB_PASSWORD=SqlServer@123
+      - DB_ADDR=mssql
+      - DB_DATABASE=Keycloak
+    networks:
+      - keycloak-network
+
+networks:
+  keycloak-network:
+    driver: bridge
+
+volumes:
+  mssql:
+    driver: local
